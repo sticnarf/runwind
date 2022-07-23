@@ -10,11 +10,12 @@ use std::{
     slice,
 };
 
-use framehop::{Module, ModuleSvmaInfo, ModuleUnwindData, TextByteData};
 use libc::{c_int, c_void, dl_iterate_phdr, dl_phdr_info, size_t, PT_LOAD};
 use log::warn;
 use memmap2::Mmap;
 use object::{Object as _, ObjectSection};
+
+use framehop::{Module, ModuleSvmaInfo, ModuleUnwindData, TextByteData};
 
 pub struct ObjectPhdr {
     base_addr: usize,
@@ -110,15 +111,13 @@ impl Object {
 
     pub fn to_module(&self) -> Module<&'_ [u8]> {
         let name = self.phdr.path.to_string_lossy().to_string();
-        let base_avma = self.mmap.mmap.as_ptr() as u64;
-        let avma_range = base_avma..(base_avma + self.mmap.mmap.len() as u64);
-        // FIXME: should be the vmaddr of the __TEXT segment for mach-O
-        let base_svma = 0;
-        let text = self.section_range(".text");
+        let base_avma = self.phdr.base_addr as u64;
+        let text_range = (self.phdr.base_addr + self.phdr.text.p_vaddr) as u64
+            ..(self.phdr.base_addr + self.phdr.text.p_vaddr + self.phdr.text.p_memsz) as u64;
+
         let eh_frame_hdr = self.section_range(".eh_frame_hdr");
         let eh_frame = self.section_range(".eh_frame");
-        let got = self.section_range(".got");
-        let unwind_data = match (&eh_frame_hdr, &eh_frame_hdr) {
+        let unwind_data = match (&eh_frame_hdr, &eh_frame) {
             (Some(eh_frame_hdr), Some(eh_frame)) => ModuleUnwindData::EhFrameHdrAndEhFrame(
                 self.range_data(eh_frame_hdr),
                 self.range_data(eh_frame),
@@ -126,28 +125,39 @@ impl Object {
             (None, Some(eh_frame)) => ModuleUnwindData::EhFrame(self.range_data(eh_frame)),
             _ => ModuleUnwindData::None,
         };
-        let text_start = self.phdr.base_addr + self.phdr.text.p_vaddr;
-        let text_bytes =
-            unsafe { slice::from_raw_parts(text_start as *const u8, self.phdr.text.p_memsz) };
-        let text_range = (text_start as u64)..((text_start + self.phdr.text.p_memsz) as u64);
-        let text_data = TextByteData::new(text_bytes, text_range);
+
+        let text_bytes = unsafe {
+            slice::from_raw_parts(
+                (self.phdr.base_addr + self.phdr.text.p_vaddr) as *const u8,
+                self.phdr.text.p_memsz,
+            )
+        };
+        let text_data = TextByteData::new(text_bytes, text_range.clone());
+
         Module::new(
             name,
-            avma_range,
+            text_range,
             base_avma,
             ModuleSvmaInfo {
-                base_svma,
-                text,
+                // FIXME: should be the vmaddr of the __TEXT segment for mach-O
+                base_svma: 0,
+                text: self.section_range(".text"),
                 text_env: None,
                 stubs: None,
                 stub_helper: None,
                 eh_frame,
                 eh_frame_hdr,
-                got,
+                got: self.section_range(".got"),
             },
             unwind_data,
             Some(text_data),
         )
+    }
+}
+
+impl Debug for Object {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Object").field("phdr", &self.phdr).finish()
     }
 }
 
@@ -218,13 +228,13 @@ unsafe extern "C" fn iterate_phdr_cb(
         }
     };
 
-    if let Some(mmap) = ObjectMmap::new(&path) {
+    let phdr = ObjectPhdr {
+        base_addr,
+        path,
+        text,
+    };
+    if let Some(mmap) = ObjectMmap::new(&phdr.path) {
         let objects = &mut *(data as *mut Vec<Object>);
-        let phdr = ObjectPhdr {
-            base_addr,
-            path,
-            text,
-        };
         objects.push(Object { phdr, mmap });
     }
 
