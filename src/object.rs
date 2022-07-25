@@ -153,6 +153,18 @@ impl Object {
             Some(text_data),
         )
     }
+
+    pub fn obj_file(&self) -> &'_ object::File<'static, &'static [u8]> {
+        &*self.mmap.obj_file
+    }
+
+    pub fn base_addr(&self) -> usize {
+        self.phdr.base_addr
+    }
+
+    pub fn text_svma(&self) -> Range<usize> {
+        self.phdr.text.p_vaddr..(self.phdr.text.p_vaddr + self.phdr.text.p_memsz)
+    }
 }
 
 impl Debug for Object {
