@@ -1,23 +1,18 @@
 use std::{
     env,
     ffi::{CStr, OsString},
-    fmt::{self, Debug},
-    fs::File,
-    mem::ManuallyDrop,
-    ops::Range,
     os::unix::prelude::OsStringExt,
-    path::{Path, PathBuf},
+    path::PathBuf,
     slice,
 };
 
-use framehop::{Module, ModuleSvmaInfo, ModuleUnwindData, TextByteData};
 use libc::{c_int, c_void, dl_iterate_phdr, dl_phdr_info, size_t, PT_LOAD};
 use log::warn;
-use memmap2::Mmap;
-use object::{Object as _, ObjectSection};
 use once_cell::sync::Lazy;
 
-static OBJECTS: Lazy<Vec<Object>> = Lazy::new(crate::object::find_objects);
+use super::{Object, ObjectMmap, ObjectPhdr, Segment};
+
+static OBJECTS: Lazy<Vec<Object>> = Lazy::new(find_objects);
 
 pub fn get_objects() -> &'static [Object] {
     &OBJECTS

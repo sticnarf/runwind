@@ -1,11 +1,8 @@
 use std::{
-    env,
-    ffi::{CStr, OsString},
     fmt::{self, Debug},
     fs::File,
     mem::ManuallyDrop,
     ops::Range,
-    os::unix::prelude::OsStringExt,
     path::{Path, PathBuf},
     slice,
 };
@@ -15,7 +12,6 @@ use libc::c_void;
 use log::warn;
 use memmap2::Mmap;
 use object::{Object as _, ObjectSection};
-use once_cell::sync::Lazy;
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub use dl_iterate_phdr::get_objects;
