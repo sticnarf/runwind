@@ -33,7 +33,7 @@ fn main() {
                 Ok(None) => break,
                 Err(e) => {
                     println!("{e}");
-                    return;
+                    break;
                 }
             }
         }
