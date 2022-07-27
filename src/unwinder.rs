@@ -24,6 +24,7 @@ where
         Unwinder { unwinder }
     }
 
+    #[cfg(target_arch = "x86_64")]
     pub fn iter_frames<'u, 'c>(
         &'u self,
         cache: &'c mut CacheNative<&'static [u8], P>,
@@ -51,15 +52,57 @@ where
     #[cfg(target_arch = "x86_64")]
     pub fn iter_frames_with_regs<'u, 'c>(
         &'u self,
+        pc: usize,
         regs: UnwindRegsNative,
         cache: &'c mut CacheNative<&'static [u8], P>,
     ) -> UnwindIterator<'u, 'c, P> {
-        let ip = regs.ip();
         UnwindIterator {
             unwinder: &self.unwinder,
             cache,
             regs,
-            addr: FrameAddress::InstructionPointer(ip),
+            addr: FrameAddress::InstructionPointer(pc as u64),
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn iter_frames<'u, 'c>(
+        &'u self,
+        cache: &'c mut CacheNative<&'static [u8], P>,
+    ) -> UnwindIterator<'u, 'c, P> {
+        let (lr, sp, fp, pc): (u64, u64, u64, u64);
+        unsafe {
+            asm!(
+                "mov {lr}, lr",
+                "mov {sp}, sp",
+                "mov {fp}, fp",
+                "adr {pc}, .",
+                lr = out(reg) lr,
+                sp = out(reg) sp,
+                fp = out(reg) fp,
+                pc = out(reg) pc,
+            );
+        }
+        let regs = UnwindRegsNative::new(lr, sp, fp);
+        UnwindIterator {
+            unwinder: &self.unwinder,
+            cache,
+            regs,
+            addr: FrameAddress::InstructionPointer(pc),
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn iter_frames_with_regs<'u, 'c>(
+        &'u self,
+        pc: usize,
+        regs: UnwindRegsNative,
+        cache: &'c mut CacheNative<&'static [u8], P>,
+    ) -> UnwindIterator<'u, 'c, P> {
+        UnwindIterator {
+            unwinder: &self.unwinder,
+            cache,
+            regs,
+            addr: FrameAddress::InstructionPointer(pc as u64),
         }
     }
 }
