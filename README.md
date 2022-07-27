@@ -1,6 +1,6 @@
 # Runwind
 
-Runwind is a Rust local unwinding library.
+Runwind is a wrapper of [framehop](https://github.com/mstange/framehop) for safe and convenient local unwinding.
 
 # License
 
