@@ -48,6 +48,7 @@ where
         }
     }
 
+    #[cfg(target_arch = "x86_64")]
     pub fn iter_frames_with_regs<'u, 'c>(
         &'u self,
         regs: UnwindRegsNative,

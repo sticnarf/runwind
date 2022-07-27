@@ -1,9 +1,19 @@
 use addr2line::Context;
+use log::LevelFilter;
 use runwind::{CacheNative, MustNotAllocateDuringUnwind, Unwinder};
+use simplelog::{ColorChoice, TermLogger, TerminalMode};
 
 fn main() {
+    TermLogger::init(
+        LevelFilter::Info,
+        Default::default(),
+        TerminalMode::Mixed,
+        ColorChoice::Auto,
+    )
+    .unwrap();
+
     let objects = runwind::get_objects();
-    println!("{:?}", objects);
+    println!("{objects:?}");
 
     let mut cache = CacheNative::new();
     let unwinder = Unwinder::<MustNotAllocateDuringUnwind>::new();
