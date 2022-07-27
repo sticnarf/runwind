@@ -106,44 +106,13 @@ pub fn validate(addr: *const libc::c_void) -> bool {
 
 #[cfg(test)]
 mod test {
-    use std::{arch::asm, ptr};
-
     use super::*;
 
     #[test]
     fn validate_stack() {
         let i = 0;
-        println!("{:p}", &i as *const _);
-
-        let sp: u64;
-        let mut stackaddr: *mut libc::c_void = ptr::null_mut();
-
-        unsafe {
-            asm!(
-                "mov {sp}, rsp",
-                sp = out(reg) sp,
-            );
-            let mut attr: MaybeUninit<libc::pthread_attr_t> = MaybeUninit::uninit();
-            let res = libc::pthread_getattr_np(libc::pthread_self(), attr.as_mut_ptr());
-            if res != 0 {
-                println!("unable to get attr: {res}");
-                return;
-            }
-            let attr = attr.assume_init();
-            let mut stacksize: libc::size_t = 0;
-            let res =
-                libc::pthread_attr_getstack(&attr as _, &mut stackaddr as _, &mut stacksize as _);
-            if res != 0 {
-                println!("unable to get stack: {res}");
-                return;
-            }
-            println!("bottom: {stackaddr:p}, top: 0x{sp:x} {stacksize}");
-        }
 
         assert!(validate(&i as *const _ as *const libc::c_void));
-        for addr in stackaddr as usize..sp as usize {
-            assert!(validate(addr as *const libc::c_void));
-        }
     }
 
     #[test]
@@ -159,51 +128,5 @@ mod test {
     fn failed_validate() {
         assert!(!validate(std::ptr::null::<libc::c_void>()));
         assert!(!validate(-1_i32 as usize as *const libc::c_void))
-    }
-
-    #[test]
-    fn bench_validate() {
-        let i = 0;
-
-        let begin = std::time::Instant::now();
-        for _ in 0..10000 {
-            let mut attr: MaybeUninit<libc::pthread_attr_t> = MaybeUninit::uninit();
-            // let res = unsafe { libc::pthread_getattr_np(libc::pthread_self(), attr.as_mut_ptr()) };
-            // if res != 0 {
-            //     println!("unable to get attr: {res}");
-            //     return;
-            // }
-            unsafe { libc::pthread_self() };
-            // let sp: u64;
-            // let mut stackaddr: *mut libc::c_void = ptr::null_mut();
-
-            // unsafe {
-            //     asm!(
-            //         "mov {sp}, rsp",
-            //         sp = out(reg) sp,
-            //     );
-            //     let mut attr: MaybeUninit<libc::pthread_attr_t> = MaybeUninit::uninit();
-            //     let res = libc::pthread_getattr_np(libc::pthread_self(), attr.as_mut_ptr());
-            //     if res != 0 {
-            //         println!("unable to get attr: {res}");
-            //         return;
-            //     }
-            //     let attr = attr.assume_init();
-            //     let mut stacksize: libc::size_t = 0;
-            //     let res = libc::pthread_attr_getstack(
-            //         &attr as _,
-            //         &mut stackaddr as _,
-            //         &mut stacksize as _,
-            //     );
-            //     if res != 0 {
-            //         println!("unable to get stack: {res}");
-            //         return;
-            //     }
-            //     let bottom = stackaddr as usize + stacksize;
-            //     let ptr = &i as *const _ as usize;
-            //     assert!(ptr > sp as usize && ptr < bottom);
-            // }
-        }
-        println!("{:?}", begin.elapsed() / 10000);
     }
 }

@@ -1,70 +1,24 @@
-use std::{arch::asm, mem::MaybeUninit, ptr};
-
 use addr2line::Context;
-use framehop::{
-    x86_64::UnwindRegsX86_64, CacheNative, MustNotAllocateDuringUnwind, Unwinder, UnwinderNative,
-};
+use runwind::{CacheNative, MustNotAllocateDuringUnwind, Unwinder};
 
 fn main() {
-    let objects = runwind::find_objects();
+    let objects = runwind::get_objects();
     println!("{:?}", objects);
+
     let mut cache = CacheNative::new();
-    let mut unwinder: UnwinderNative<_, MustNotAllocateDuringUnwind> = UnwinderNative::new();
+    let unwinder = Unwinder::<MustNotAllocateDuringUnwind>::new();
     let mut contexts = Vec::new();
-    for obj in &objects {
-        unwinder.add_module(obj.to_module());
+    for obj in runwind::get_objects() {
         let context = Context::new(obj.obj_file()).unwrap();
         contexts.push((obj.base_addr(), obj.text_svma(), context));
     }
     contexts.sort_by_key(|(base_addr, _, _)| *base_addr);
 
     a(|| {
-        let ip: u64;
-        let sp: u64;
-        let bp: u64;
-        unsafe {
-            asm!(
-                "lea {ip}, [rip]",
-                "mov {sp}, rsp",
-                "mov {bp}, rbp",
-                ip = out(reg) ip,
-                sp = out(reg) sp,
-                bp = out(reg) bp,
-            );
-        }
-
-        unsafe {
-            let mut attr: MaybeUninit<libc::pthread_attr_t> = MaybeUninit::uninit();
-            let res = libc::pthread_getattr_np(libc::pthread_self(), attr.as_mut_ptr());
-            if res != 0 {
-                println!("unable to get attr: {res}");
-                return;
-            }
-            let attr = attr.assume_init();
-            let mut stackaddr: *mut libc::c_void = ptr::null_mut();
-            let mut stacksize: libc::size_t = 0;
-            let res =
-                libc::pthread_attr_getstack(&attr as _, &mut stackaddr as _, &mut stacksize as _);
-            if res != 0 {
-                println!("unable to get stack: {res}");
-                return;
-            }
-            println!("bottom: {stackaddr:p}, top: 0x{sp:x} {stacksize}");
-        }
-
-        let mut read_stack = |addr| {
-            println!("read stack {:x}", addr);
-            unsafe { Ok(((addr / 8 * 8) as *const u64).read()) }
-        };
-        let mut iter = unwinder.iter_frames(
-            ip,
-            UnwindRegsX86_64::new(ip, sp, bp),
-            &mut cache,
-            &mut read_stack,
-        );
+        let mut iter = unwinder.iter_frames(&mut cache);
         let mut frame_addresses = Vec::new();
         loop {
-            match iter.next() {
+            match iter.try_next() {
                 Ok(Some(addr)) => frame_addresses.push(addr),
                 Ok(None) => break,
                 Err(e) => {
@@ -73,8 +27,9 @@ fn main() {
                 }
             }
         }
-        for addr in frame_addresses {
-            let addr = addr.address();
+        for addr in frame_addresses.iter().skip(1) {
+            println!("frame: 0x{:x}", addr);
+            let addr = *addr as u64;
             let (svma, context) =
                 match contexts.binary_search_by_key(&addr, |(base_addr, _, _)| *base_addr as u64) {
                     Ok(_) => {
@@ -89,7 +44,7 @@ fn main() {
                             let (base_addr, text_range, context) = &contexts[idx - 1];
                             let svma = addr as usize - base_addr;
                             if !text_range.contains(&svma) {
-                                println!("address not in text section");
+                                println!("address 0x{:x} not in text section", addr);
                                 return;
                             }
                             (svma, context)

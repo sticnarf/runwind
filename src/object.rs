@@ -16,6 +16,7 @@ use memmap2::Mmap;
 use object::{Object as _, ObjectSection};
 
 use framehop::{Module, ModuleSvmaInfo, ModuleUnwindData, TextByteData};
+use once_cell::sync::Lazy;
 
 pub struct ObjectPhdr {
     base_addr: usize,
@@ -173,7 +174,13 @@ impl Debug for Object {
     }
 }
 
-pub fn find_objects() -> Vec<Object> {
+pub static OBJECTS: Lazy<Vec<Object>> = Lazy::new(crate::object::find_objects);
+
+pub fn get_objects() -> &'static [Object] {
+    &OBJECTS
+}
+
+fn find_objects() -> Vec<Object> {
     let mut objects = Vec::new();
     unsafe {
         dl_iterate_phdr(

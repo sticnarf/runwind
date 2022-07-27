@@ -1,6 +1,9 @@
 mod addr_validate;
-mod error;
 mod object;
-pub mod unwinder;
+mod unwinder;
 
-pub use crate::object::find_objects;
+pub use crate::object::get_objects;
+pub use crate::unwinder::{UnwindIterator, Unwinder};
+pub use framehop::{
+    CacheNative, Error, MayAllocateDuringUnwind, MustNotAllocateDuringUnwind, UnwindRegsNative,
+};
