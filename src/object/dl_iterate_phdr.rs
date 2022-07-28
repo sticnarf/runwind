@@ -1,16 +1,19 @@
 use std::{
     env,
     ffi::{CStr, OsString},
+    fs::File,
+    mem::ManuallyDrop,
     os::unix::prelude::OsStringExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     slice,
 };
 
 use libc::{c_int, c_void, dl_iterate_phdr, dl_phdr_info, size_t, PT_LOAD};
 use log::warn;
+use memmap2::Mmap;
 use once_cell::sync::Lazy;
 
-use super::{Object, ObjectMmap, ObjectPhdr, Segment};
+use super::{Object, ObjectPhdr, Segment};
 
 static OBJECTS: Lazy<Vec<Object>> = Lazy::new(find_objects);
 
@@ -96,4 +99,47 @@ unsafe extern "C" fn iterate_phdr_cb(
     }
 
     0
+}
+
+pub struct ObjectMmap {
+    pub file: ManuallyDrop<File>,
+    pub mmap: ManuallyDrop<Mmap>,
+    pub obj_file: ManuallyDrop<object::File<'static, &'static [u8]>>,
+}
+
+impl ObjectMmap {
+    fn new(path: &Path) -> Option<ObjectMmap> {
+        let file = File::open(path)
+            .map_err(|e| warn!("Failed to open {path:?}: {e}"))
+            .ok()?;
+        let mmap = unsafe {
+            Mmap::map(&file)
+                .map_err(|e| warn!("Failed to mmap {path:?}: {e}"))
+                .ok()?
+        };
+        let (ptr, len) = (mmap.as_ptr(), mmap.len());
+        let data = unsafe { slice::from_raw_parts(ptr, len) };
+        let obj_file = object::File::parse(data)
+            .map_err(|e| warn!("Failed to parse {path:?}: {e}"))
+            .ok()?;
+        Some(ObjectMmap {
+            file: ManuallyDrop::new(file),
+            mmap: ManuallyDrop::new(mmap),
+            obj_file: ManuallyDrop::new(obj_file),
+        })
+    }
+}
+
+impl Drop for ObjectMmap {
+    fn drop(&mut self) {
+        // Specify drop order:
+        // 1. Drop the object::File that may reference the mmap.
+        // 2. Drop the mmap.
+        // 3. Close the file.
+        unsafe {
+            ManuallyDrop::drop(&mut self.obj_file);
+            ManuallyDrop::drop(&mut self.mmap);
+            ManuallyDrop::drop(&mut self.file);
+        };
+    }
 }

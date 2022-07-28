@@ -1,22 +1,18 @@
 use std::{
     fmt::{self, Debug},
-    fs::File,
-    mem::ManuallyDrop,
     ops::Range,
-    path::{Path, PathBuf},
+    path::PathBuf,
     slice,
 };
 
 use framehop::{Module, ModuleSvmaInfo, ModuleUnwindData, TextByteData};
 use libc::c_void;
-use log::warn;
-use memmap2::Mmap;
 use object::{Object as _, ObjectSection};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-pub use dl_iterate_phdr::get_objects;
+pub use dl_iterate_phdr::{get_objects, ObjectMmap};
 #[cfg(any(target_os = "macos"))]
-pub use macos::get_objects;
+pub use macos::{get_objects, ObjectMmap};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod dl_iterate_phdr;
@@ -50,49 +46,6 @@ impl Debug for Segment {
             .field("p_vaddr", &(self.p_vaddr as *const c_void))
             .field("p_memsz", &self.p_memsz)
             .finish()
-    }
-}
-
-pub struct ObjectMmap {
-    file: ManuallyDrop<File>,
-    mmap: ManuallyDrop<Mmap>,
-    obj_file: ManuallyDrop<object::File<'static, &'static [u8]>>,
-}
-
-impl ObjectMmap {
-    fn new(path: &Path) -> Option<ObjectMmap> {
-        let file = File::open(path)
-            .map_err(|e| warn!("Failed to open {path:?}: {e}"))
-            .ok()?;
-        let mmap = unsafe {
-            Mmap::map(&file)
-                .map_err(|e| warn!("Failed to mmap {path:?}: {e}"))
-                .ok()?
-        };
-        let (ptr, len) = (mmap.as_ptr(), mmap.len());
-        let data = unsafe { slice::from_raw_parts(ptr, len) };
-        let obj_file = object::File::parse(data)
-            .map_err(|e| warn!("Failed to parse {path:?}: {e}"))
-            .ok()?;
-        Some(ObjectMmap {
-            file: ManuallyDrop::new(file),
-            mmap: ManuallyDrop::new(mmap),
-            obj_file: ManuallyDrop::new(obj_file),
-        })
-    }
-}
-
-impl Drop for ObjectMmap {
-    fn drop(&mut self) {
-        // Specify drop order:
-        // 1. Drop the object::File that may reference the mmap.
-        // 2. Drop the mmap.
-        // 3. Close the file.
-        unsafe {
-            ManuallyDrop::drop(&mut self.obj_file);
-            ManuallyDrop::drop(&mut self.mmap);
-            ManuallyDrop::drop(&mut self.file);
-        };
     }
 }
 
