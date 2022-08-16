@@ -19,8 +19,10 @@ fn main() {
     let unwinder = Unwinder::<MustNotAllocateDuringUnwind>::new();
     let mut contexts = Vec::new();
     for obj in runwind::get_objects() {
-        let context = Context::new(obj.obj_file()).unwrap();
-        contexts.push((obj.base_addr(), obj.text_svma(), context));
+        if let Some(file) = obj.obj_file() {
+            let context = Context::new(file).unwrap();
+            contexts.push((obj.base_addr(), obj.text_svma(), context));
+        }
     }
     contexts.sort_by_key(|(base_addr, _, _)| *base_addr);
 
